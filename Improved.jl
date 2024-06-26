@@ -2,7 +2,7 @@ using JuMP
 using HiGHS
 using SparseArrays
 using Timers
-model = read_from_file("supportcase12.mps")
+model = read_from_file("s100.mps")
 data = lp_matrix_data(model);
 
 
@@ -187,6 +187,57 @@ function dommergesort(ordering, y)
     end
 end
 
+
+function binary_search(array, target::Int64, start::Int64)
+    l = start
+    r = length(array)
+    while l <= r
+        pos = floor(Int, (l+r)/2)
+        if array[pos] < target
+            l = pos + 1
+        elseif array[pos] > target
+            r = pos - 1
+        else
+            return(true, pos)
+        end
+    end
+    return(false, l)
+end
+
+function fastcut(L1, element)
+    sort!(L1)
+    l1 = length(L1)
+    l2 = length(potdoms[element])
+    if l1 == 0 || l2 == 0
+        return()
+    end
+    if l1 < l2 
+        i1 = 1
+        u2 = 1
+        while i1 <= l1 && u2 <= l2
+            res = binary_search(potdoms[element], L1[i1], u2)
+            if res[1]
+                deleteat!(potdoms[element], res[2])
+            end
+            i1 += 1
+            u2 = res[2]
+        end
+    else
+        i2 = 1
+        u1 = 1
+        while i2 <= l2 && u1 <= l1
+            res = binary_search(L1, potdoms[element][i2], u1)
+            if res[1]
+                deleteat!(potdoms[element], i2)
+                i2 -= 1
+                l2 -= 1
+            end
+            i2 += 1
+            u1 = res[2]
+        end
+    end
+end
+
 function dommerge(order1, order2, y)
     # println("Calling dommerge on: ", order1, ", ", order2, " and ", y )
     neworder = []
@@ -202,7 +253,8 @@ function dommerge(order1, order2, y)
             # println("order1[i1:le1]: ", order1[i1:le1])
             # println("potdoms[order2[i2]]: ", potdoms[order2[i2]])
             # println("filtered out: ", filter!(e-> (e in order1[i1:le1]), potdoms[order2[i2]]))
-            filter!(e-> !(e in order1[i1:le1]), potdoms[order2[i2]])
+            # filter!(e-> !(e in order1[i1:le1]), potdoms[order2[i2]])
+            fastcut(order1[i1:le1], order2[i2])
             append!(neworder, order2[i2])
             i2 += 1
         end
