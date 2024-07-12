@@ -2,43 +2,42 @@ using JuMP
 using HiGHS
 using SparseArrays
 using Timers
-model = read_from_file("C:/Users/Jacob/Desktop/Testing/supportcase19.mps")
-data = lp_matrix_data(model);
-
-
-global dom_pairs = []
-global A = data.A
-global c = data.c
-global n = length(c)
-global m = floor(Int, length(A) / n)
-global dom_pairs = []
-global zbitstring = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 
 function CreateBitstring(x)
-    local varbitstring = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    local varbitstring = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     if issparse(A[:, x])
         for i in findnz(A[:, x])[1]
-            if i % 64 == 0
-                varbitstring[64] = 1
+            if i % 32 == 0
+                varbitstring[32] = 1
             else
-                varbitstring[i % 64] = 1
+                varbitstring[i % 32] = 1
             end
         end
         return(varbitstring)
     end
-    for i in 1 : 64
+    for i in 1 : 32
         local p = 0
-        while (p*64 + i) <= m && A[(p*64 + i), x] == 0
+        while (p*32 + i) <= m && A[(p*32 + i), x] == 0
             p += 1
         end
-        if (p*64 + i) <= m
+        if (p*32 + i) <= m
             varbitstring[i] = 1
         end
     end
     return(varbitstring)
 end
 
+function CreateBitsrings()
+    global M = []
+    i = 1 
+    while i <= n
+        push!(M, CreateBitstring(i))
+        i += 1
+    end
+end
+
+#=
 
 function findHeap(bitss)
     l = length(L)
@@ -89,6 +88,8 @@ function findpairs(L)
         i1 += 1
     end
 end
+
+=#
 
 function compare(i1, i2)
     local p = 1
@@ -213,13 +214,44 @@ function compareneg(i1, i2)
     end
 end
 
+function dom_vars()
+    vars = []
+    for p in dom_pairs
+        append!(vars, p)
+        #= if !(abs(p[1]) in vars)
+            append!(vars, p[1])
+        end
+        if !(abs(p[2]) in vars)
+            append!(vars, p[2])
+        end =#
+    end
+    #println(length(vars))
+    unique!(vars)
+    return(length(vars))
+end
+
+function domposs(x,y)
+    sup1 = true
+    sup2 = true
+    i = 1
+    while i <= 32 && (sup1 || sup2)
+        if M[x][i] - M[y][i] == 1
+            sup2 = false
+        elseif M[x][i] - M[y][i] == -1
+            sup1 = false
+        end
+        i += 1
+    end
+    return(sup1 || sup2)
+end
+            
 #global L
-tic()
+#=tic()
 CreateHeaps()
 println("Creating Heaps took: ")
 toc()
 tic()
-#=
+
 test = []
 for i in 1 : n
     append!(test, i)
@@ -227,9 +259,105 @@ end
 L = [[1,test]] =#
 #global runtime = 0
 #global printer = 1
-l = length(L)
-global iter = 1
-while iter <= l #&& runtime <= 1000
+#l = length(L)
+function main()
+    outputs = true
+    global start = time()
+    #tic()
+    CreateBitsrings()
+    #toc()
+    global x = 1
+    while x <= n && (time() - start) <= 10
+        # println(x)
+        minlength = 1000000
+        minindex = 0
+        for i in findnz(A[:, x])[1]
+            if length(findnz(A[i, :])[1]) < minlength 
+                minlength = length(findnz(A[i, :])[1])
+                minindex = i
+            end
+        end
+        if minindex != 0
+            for y in findnz(A[minindex, :])[1]
+                if y != x && domposs(x,y)
+                    compare(y,x)
+                    compareneg(y,x)
+                end
+            end
+        end
+        x += 1
+    end
+    if time() - start > 10
+        #println("couldn't complete")
+        outputs = false
+    end
+    #println("done")
+    unique!(dom_pairs)
+    #println("done")
+    #println(length(dom_pairs))
+    res = dom_vars()
+    #println("done")
+    #println(outputs,length(dom_pairs),res)
+    return(outputs,length(dom_pairs),res)
+end
+
+cd("C:/Users/jacob/Desktop/Testing")
+
+directory = readdir()
+
+global directoryindex = 4
+global const directorylength = length(directory)
+
+while directoryindex <= directorylength
+    global runtime = 0
+    
+    println(directory[directoryindex])
+    model = read_from_file(directory[directoryindex])
+    data = lp_matrix_data(model);
+    
+    global dom_pairs = []
+    global A = data.A
+    global c = data.c
+    global n = length(c)
+    global m = floor(Int, length(A) / n)
+    global dom_pairs = []
+    global zbitstring = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    global start1 = time()
+
+    result = main()
+    
+    global runtime = time() - start1
+
+    a = 1000
+    open("0000resultsscip10.txt","a") do io
+        println(io, "#", directory[directoryindex], "#",runtime , "#", result[1] , "#",  result[2], "#", result[3], "#", n, "#", m, "#", length(findnz(A)[3]), "#" )
+    end
+
+    println(directoryindex)
+
+    global directoryindex += 1
+end
+
+
+    
+#=
+main()
+
+
+
+
+model = read_from_file("C:/Users/Jacob/Desktop/Testing/mik-250-20-75-4.mps")
+data = lp_matrix_data(model);
+
+
+
+
+
+
+
+
+
     lenbefore = length(dom_pairs)
     i1 = 1
     templ = length(L[iter][2])
@@ -261,7 +389,7 @@ toc()
 println(" there are this many pairs: ", length(dom_pairs))
 #println(dom_pairs)
             
-
+=#
 
 
 
